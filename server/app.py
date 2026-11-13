@@ -123,8 +123,31 @@ def create_session(body: SessionCreate) -> dict[str, Any]:
     session id and a signed token. The token payload must contain session_id,
     user_id, role, store_id, and issued_at.
     """
-    ### YOUR CODE HERE (HW2)
-    raise NotImplementedError("HW2: implement POST /sessions")
+    if body.role not in ROLES:
+        raise HTTPException(status_code=400, detail="unsupported role")
+
+    with db.connection() as conn:
+        user = db.get_user(conn, body.user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="unknown user")
+    if user.role != body.role:
+        raise HTTPException(status_code=403, detail="role mismatch")
+
+    context = AuthContext(user_id=user.id, role=user.role, store_id=user.store_id)
+    session_id = str(uuid.uuid4())
+    session = SQLiteSession(session_id, str(SESSIONS_DB))
+    _SESSIONS[session_id] = (context, session)
+
+    token = create_token(
+        {
+            "session_id": session_id,
+            "user_id": user.id,
+            "role": user.role,
+            "store_id": user.store_id,
+            "issued_at": int(time.time()),
+        }
+    )
+    return {"session_id": session_id, "token": token}
 
 
 def _authorize(session_id: str, authorization: str | None) -> AuthContext:
